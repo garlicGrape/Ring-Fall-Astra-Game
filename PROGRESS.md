@@ -2,7 +2,8 @@
 
 ## Current state
 
-- Branch: `shared-arena-foundation`, tracking `origin/` on `garlicGrape/Ring-Fall-Astra-Game`.
+- Repository `garlicGrape/Ring-Fall-Astra-Game`. Branch: `online-multiplayer`, off `main`.
+- The arena-extraction work merged to `main` as PR #1 (`34ec37b`).
 - **Online multiplayer is implemented and working.** Authoritative Node + WebSocket server,
   client prediction and reconciliation, remote avatars, rooms, scoreboard and kill feed.
 - Solo practice against drones is unchanged and still available.
@@ -60,7 +61,17 @@ authority cannot drift apart.
 
 ## Next task
 
-1. Open two browser windows on `http://localhost:3000`, create a match in one, join by code
-   in the other, and confirm remote players render and animate correctly.
-2. Then: Milestone 3 art pass, and deploy to Railway (~$5/month Hobby; the tick loop is
-   already gated on having players so an idle server costs almost nothing).
+1. **Browser verification.** `npm ci && npm run dev`, then two windows on
+   `http://localhost:3000`: create a match in one, join by code in the other. Confirm remote
+   players render, animate and take damage; check the scoreboard, kill feed and nameplates;
+   watch the console for errors. This is the single biggest gap.
+2. Then Milestone 3 (art and performance), and deployment to Railway (~$5/month Hobby; the
+   tick loop is already gated on having players, so an idle server costs almost nothing).
+3. Still outstanding from Milestone 2: bounded server-side lag compensation, deliberately
+   deferred until basic authority was proven.
+
+## Session checklist
+
+Documentation updates at the end of a session are required, not optional — see the checklist
+in `LOCAL_WORKFLOW.md` under "End of each session". A stale document is worse than none,
+because the next fresh clone will believe it.

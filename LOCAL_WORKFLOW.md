@@ -10,7 +10,7 @@ For no local project checkout, use a remote development environment if you choos
 
 ## One-time GitHub setup
 
-No GitHub repository has been created for this export. Choose an actual repository and its visibility before uploading; private is the default preference. Never guess the account, repository URL, access policy or remote.
+The repository is `garlicGrape/Ring-Fall-Astra-Game`, with `main` as the integration branch. Never guess a different account, repository URL, access policy or remote.
 
 Use this ZIP once as the bootstrap. The repository root must contain package.json, README.md and these instruction files, rather than an unnecessary extra ringfall directory. Review the files, initialize Git if necessary, add the selected GitHub remote, commit the source and push. Keep credentials and local .env files out of the commit. The existing dist/ folder is authored source and MUST be included.
 
@@ -20,15 +20,16 @@ The development agent should complete this setup with the user's chosen reposito
 
 1. Clone the chosen repository into a fresh, dedicated folder. Prefer git clone to GitHub's Download ZIP: a clone retains branches, history and the remote needed to push changes.
 2. Use the branch containing the latest work. Unmerged work may be on a development branch, not the default branch. Read PROGRESS.md before coding.
-3. Run the documented checks. The current baseline needs only Node.js 22+, with no dependency installation:
+3. Install dependencies and run the documented checks. Node.js 22+ is required:
 
 ```sh
+npm ci
 npm run check
 npm test
 npm run dev
 ```
 
-4. After future development adds dependencies and a committed package-lock.json, use npm ci from the repository root. Do not use npm install -g. Preserve the package manager and lockfile once chosen.
+4. `npm ci` from the repository root, always — `package-lock.json` is committed. Do not use npm install -g. Preserve the package manager and lockfile.
 5. Use the installed agent from this folder, one agent at a time. All generated project artifacts must remain inside the checkout.
 
 Clone template, replacing both placeholders with the real chosen values:
@@ -58,7 +59,17 @@ If you download a GitHub ZIP instead, it has no .git history or upstream. Do not
 ## End of each session
 
 1. Stop the foreground development server with Ctrl+C. Stop only project-owned test runners and other processes started during this session; never kill every Node process.
-2. Run relevant tests, update PROGRESS.md, and review git diff and git status. Include source, required assets, package manifests/lockfiles, docs and tests. Inspect new files for credentials before staging.
+2. Run relevant tests, then **update the documentation before committing** — this is a required step, not a nicety:
+   - `PROGRESS.md`: current state, what changed, what was actually verified, what was NOT, and the next concrete task.
+   - `README.md`: run commands, controls, features and limits, if any changed.
+   - `PROJECT_HANDOFF.md`: the "What is here now" summary, source map and milestone status.
+   - `LOCAL_WORKFLOW.md`, `AGENTS.md`, `CLAUDE.md`: only when the workflow itself changed.
+   - `ASSETS.md`: whenever a licensed asset is added.
+
+   Read each one and fix any statement that has gone stale. A document that still describes
+   a previous state is worse than no document, because the next fresh clone will believe it.
+   Then review git diff and git status. Include source, required assets, package
+   manifests/lockfiles, docs and tests. Inspect new files for credentials before staging.
 3. Commit and push to the chosen repository and branch. Record the branch name, full commit SHA, test results and next task. If push fails, KEEP the checkout and say the work is not backed up.
 4. Verify the upstream after a successful push:
 

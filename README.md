@@ -1,10 +1,12 @@
-# RINGFALL development package
+# RINGFALL
 
-Start here, then read **LOCAL_WORKFLOW.md** and **PROJECT_HANDOFF.md**. It contains the multiplayer, animation and visual-improvement brief for Codex CLI or Claude Code. `AGENTS.md` and `CLAUDE.md` point both agents to that same brief.
+An original sci-fi arena FPS: online free-for-all deathmatch on the Relay Station, plus a solo drone practice mode. Plain browser ES modules with vendored Three.js, and an authoritative Node + WebSocket server.
+
+Start here, then read **PROGRESS.md** for current state, **LOCAL_WORKFLOW.md** for the session workflow and **PROJECT_HANDOFF.md** for the full brief. `AGENTS.md` and `CLAUDE.md` point both agents to the same documents.
 
 ## GitHub is the source of truth
 
-Use this ZIP once to bootstrap your chosen GitHub repository. No GitHub upload has been performed yet. After setup, clone the repository's current working branch into a fresh folder whenever you want to develop. Prefer git clone over Download ZIP so your agent can commit and push changes normally.
+The repository is **`garlicGrape/Ring-Fall-Astra-Game`**; `main` is the integration branch. Clone the repository's current working branch into a fresh folder whenever you want to develop. Prefer git clone over Download ZIP so your agent can commit and push changes normally.
 
 All project dependencies, caches, logs and generated outputs should stay inside that disposable folder. The included .npmrc redirects npm cache/logs to .cache/, and .gitignore excludes local artifacts while preserving the authored dist/ source. Existing Git/Node/agent installations and browser/OS data can still remain outside it; this is not a zero-footprint guarantee.
 
@@ -43,18 +45,22 @@ npm test
 
 Launch your installed Codex CLI or Claude Code from this folder. Give it this instruction:
 
-> Read LOCAL_WORKFLOW.md, PROJECT_HANDOFF.md and README.md. Inspect the existing game, run its baseline checks, then implement the multiplayer, animation and visual improvements in the brief. Keep caches and artifacts inside this checkout, avoid global installs and background services, and keep PROGRESS.md current. Commit and push to the chosen GitHub branch, then verify backup before saying this folder is safe to remove. Do not stop at a plan.
+> Read LOCAL_WORKFLOW.md, PROJECT_HANDOFF.md, PROGRESS.md and README.md. Run `npm ci`, `npm run check` and `npm test`, then continue from the next task in PROGRESS.md. Keep caches and artifacts inside this checkout, avoid global installs and background services. At the end of the session update PROGRESS.md **and every other document whose statements have gone stale**, then commit, push and verify the branch before saying this folder is safe to remove. Do not stop at a plan.
 
 Use one agent at a time in this folder so they do not overwrite each other's work.
 
 ## Current controls
 
-WASD move, mouse look, left click fire, right click precision aim, Space jump, Shift sprint, R reload, 1/2 switch weapons, Escape pause/release mouse. Click Deploy to capture the mouse. If capture is blocked in an embedded view, open the game in its own browser tab.
+WASD move, mouse look, left click fire, right click precision aim, Space jump, Shift sprint, R reload, 1/2 switch weapons, Escape release mouse. If capture is blocked in an embedded view, open the game in its own browser tab.
+
+In solo practice Escape pauses. **Online, Escape only opens your local menu — the match keeps running and you can still be shot.**
 
 ## Baseline and limits
 
-Prototype v1.2: single-player drone waves with rifle/scattergun, shields, health and local collision. No online features exist yet. 21 code-level regression checks passed before export. Browser animation quality and subjective control feel still need real playtesting.
+Online free-for-all deathmatch (2–8 players, rooms by code, authoritative server) plus solo drone practice with rifle/scattergun, shields, health and local collision.
 
-`dist/` contains authored source, not disposable build output. Three.js 0.160.1 is vendored with its MIT license. Google Fonts is an optional cosmetic request; system fonts are used if unavailable. The game itself works with local assets.
+**59 automated checks pass**, including integration tests that drive real WebSocket clients through a live server. **No part of the game has been verified in a browser** — rendering, mouse feel, frame rate and the look of remote players are all still unconfirmed. See PROGRESS.md for the current verified/unverified split.
+
+`dist/` contains authored source, not disposable build output; `dist/shared/` is imported by both the browser and the server. `server/` holds the authoritative simulation. Three.js 0.160.1 is vendored with its MIT license. `ws` is the only npm dependency. Google Fonts is an optional cosmetic request; system fonts are used if unavailable. The game itself works with local assets.
 
 This export contains no hosting account configuration, credentials, Git history, or nested source ZIP. Running it locally does not require OpenAI sign-in. The existing hosted game has not been changed by preparing this package.

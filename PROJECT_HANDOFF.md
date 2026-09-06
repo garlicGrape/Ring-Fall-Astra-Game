@@ -12,36 +12,46 @@ Implement and verify the work rather than stopping at a plan. Make reasonable en
 
 ## What is here now
 
-Baseline: prototype v1.2, exported from source revision `fbde9bbbef365d7a38b61e34f12180ee58dc0421`. This export adds handoff documentation and removes the hosted source-download link. It excludes the old Site identity, credentials, Git history, and previous ZIPs. It is a standalone starting point; do not assume this folder is connected to the old hosted Site.
+Originally exported as prototype v1.2 from source revision `fbde9bbbef365d7a38b61e34f12180ee58dc0421`. Milestone 2 has since been implemented. **PROGRESS.md is the live status; this section is the durable summary.**
 
-- Plain browser JavaScript ES modules, with locally vendored Three.js 0.160.1.
-- No npm dependencies or build pipeline yet. Node.js 22+ serves `dist/` through `server.mjs`.
-- `dist/` currently contains the authored source. Do not delete it as “generated output.” If moving to a source/build structure, migrate these files first.
-- Single-player waves of hovering drones, static arena collision, two hitscan weapons, shields, health, synthesized audio, pause/death/redeploy.
-- A 120 Hz local simulation and interpolated player rendering.
-- 21 code-level regression tests passed at handoff. Actual browser visual quality, mouse feel and performance have NOT been verified automatically.
-- `server.mjs` is only a static file server. It is NOT a multiplayer server.
-- Browser-generated sounds and simple procedural geometry are placeholders, not finished production art.
-- This folder has no game accounts, databases, APIs, multiplayer protocol, or room system. Practice progress resets on reload. Preferences are session-only.
+- Plain browser JavaScript ES modules, with locally vendored Three.js 0.160.1. No build pipeline.
+- One npm dependency: `ws`, with `package-lock.json` committed. Use `npm ci`.
+- `dist/` contains the authored source. Do not delete it as “generated output.” If moving to a source/build structure, migrate these files first.
+- `server.mjs` serves `dist/` AND runs the authoritative game server on the same origin and port.
+- Online free-for-all deathmatch: rooms by code, 2–8 players, server-owned movement/hits/scores, client prediction with reconciliation, remote interpolation.
+- Solo practice waves of hovering drones remain available and unchanged.
+- Browser-generated sounds and simple procedural geometry are still placeholders, not finished production art.
+- Rooms are in-memory only. There is no database and no accounts. A restart ends active matches. Practice progress resets on reload; preferences are session-only.
+- **Nothing has been verified in a browser.** Automated coverage is thorough at the protocol level; rendering, mouse feel and performance remain unconfirmed.
 
 ### Source map
 
 | File | Responsibility |
 | --- | --- |
-| `dist/game.js` | Arena, rendering, main loop, drones, combat effects, HUD integration |
+| `dist/game.js` | Rendering, main loop, drones, combat effects, HUD, mode selection |
 | `dist/controls.js` | Pointer lock, keyboard input, aiming and pause lifecycle |
-| `dist/movement.js` | Kinematic movement, collision, stairs, gravity and jumping |
-| `dist/weapons.js` | Weapon state, reload timeline, cooldowns, swept projectile helper |
-| `dist/index.html`, `dist/style.css` | Start/pause screen, settings, HUD |
-| `tests/controls.test.mjs` | Input lifecycle and movement regression checks |
-| `tests/weapons.test.mjs` | Reload, switching, cooldown, animation and projectile checks |
+| `dist/movement.js` | Kinematic movement, collision, stairs, gravity and jumping. **Shared with the server.** |
+| `dist/weapons.js` | Weapon state, reload timeline, cooldowns. **Shared with the server.** |
+| `dist/shared/arena.js` | Renderer-free arena geometry; drawn by the client, collided against by the server |
+| `dist/shared/protocol.js` | Message types, validation, match rules, room codes, name sanitizing |
+| `dist/shared/raycast.js` | Ray/AABB hit resolution against the same solids `movePlayer` uses |
+| `dist/net.js` | Transport, prediction with input replay, remote interpolation |
+| `dist/online.js` | Remote avatars, nameplates, scoreboard, kill feed, match HUD |
+| `server/room.js` | Authoritative room: movement, shooting, damage, deaths, respawns, scores, clock |
+| `server/hub.js` | Room registry, join/leave, rate limits, sweep, gated fixed-timestep driver |
+| `server.mjs` | Static client + same-origin WebSockets, `/healthz`, graceful shutdown |
+| `dist/index.html`, `dist/style.css` | Menus, multiplayer panel, settings, HUD |
+| `tests/*.test.mjs` | Controls, weapons, arena, server authority, and live-WebSocket integration |
 | `dist/vendor/` | Vendored renderer and MIT license |
+
+`movement.js` and `weapons.js` are imported UNCHANGED by both sides. Keep it that way: it is
+what makes prediction and authority agree by construction rather than by discipline.
 
 ## GitHub-first development requirement
 
 The user wants to obtain a fresh copy from GitHub for each session and avoid accumulating project junk on the laptop. `LOCAL_WORKFLOW.md` is the mandatory source of detail for setup, storage, session completion and safe cleanup. Keep dependencies, npm/browser caches, reports and builds local to the disposable checkout. No global package installs, persistent local services, or shell/global-agent configuration changes. Keep all required source/assets/lockfiles and PROGRESS.md recoverable from the chosen repository; verify pushed branch and SHA before calling work backed up. Do not automatically delete the user's checkout. Existing tools/browser/OS data may remain outside the folder, so do not promise zero footprint.
 
-No GitHub repository was created as part of this packaging task. Resolve the real destination and access before the initial upload. Use fresh git clones thereafter, preferably of the recorded working branch. This rule applies throughout all milestones below. A deployment Dockerfile does not authorize running persistent local Docker services.
+The repository is `garlicGrape/Ring-Fall-Astra-Game`, with `main` as the integration branch. Use fresh git clones of the recorded working branch. This rule applies throughout all milestones below. A deployment Dockerfile does not authorize running persistent local Docker services.
 
 ## First actions
 
@@ -62,7 +72,11 @@ No GitHub repository was created as part of this packaging task. Resolve the rea
 - Cover impacts take precedence over later projectile/player intersections. Invisible dead targets cannot absorb subsequent shotgun pellets. Dispose removed geometry/materials safely without disposing shared assets.
 - Preserve meaningful tests as architecture changes. Add regressions for reproduced defects rather than tests that merely repeat implementation details.
 
-## Milestone 1: animation and playable baseline
+## Milestone 1: animation and playable baseline — PARTIAL
+
+The reload timeline, equip transition and pose sampling exist and are tested. Proper
+first-person arms, distinct weapon silhouettes and browser inspection of the animation
+remain outstanding.
 
 Replace crude weapon motion with clearly readable, coherent animations. Use proper first-person arms, distinct weapon silhouettes and suitable models if available. A simple well-animated original model is better than a detailed broken one.
 
@@ -74,7 +88,11 @@ Replace crude weapon motion with clearly readable, coherent animations. Use prop
 - Add a small equip/holster transition, restrained movement sway, jump/landing feedback and consistent precision aiming.
 - Keep a practice mode so controls and weapons can be tested alone.
 
-## Milestone 2: real online multiplayer
+## Milestone 2: real online multiplayer — IMPLEMENTED, NOT YET BROWSER-VERIFIED
+
+Built and covered by 59 automated checks including live-WebSocket integration tests. Still
+outstanding from this milestone: browser-to-browser verification, and bounded server-side
+lag compensation (deliberately deferred until basic authority was proven).
 
 Use a persistent Node.js server with WebSockets and an authoritative simulation. A practical target architecture is TypeScript, a Vite browser client, a Node WebSocket server and shared protocol/map/movement types. Migrate only as needed, keep clear run commands, and commit a lockfile once dependencies exist. Verify current package APIs before adopting them.
 
