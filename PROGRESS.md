@@ -1,58 +1,66 @@
 # RINGFALL progress
 
-## Current baseline
+## Current state
 
-- Branch: `main`, tracking `origin/main` (`git@github.com:garlicGrape/Ring-Fall-Astra-Game.git`).
-- Prototype is a local single-player Three.js arena FPS. `dist/` is authored source.
-- Checks pass: `npm run check` and `npm test` — **26 tests** (21 baseline + 5 new arena tests).
-- No browser playtest yet this session. Multiplayer is not implemented yet.
-- Node v24.18.0 used locally; package.json still has no dependencies and no lockfile.
+- Branch: `shared-arena-foundation`, tracking `origin/` on `garlicGrape/Ring-Fall-Astra-Game`.
+- **Online multiplayer is implemented and working.** Authoritative Node + WebSocket server,
+  client prediction and reconciliation, remote avatars, rooms, scoreboard and kill feed.
+- Solo practice against drones is unchanged and still available.
+- Checks pass: `npm run check` and `npm test` — **59 tests**, including 6 that drive two real
+  WebSocket clients through a live server.
+- Node v24.18.0. First dependency added: `ws` (with `package-lock.json` committed).
 
-## This session
+## Architecture
 
-- Finished the drone presentation work that was in flight (hover, wing motion, pulsing
-  lights, death dissolve).
-- **Fixed a shared-material defect** in that work: drone glow panels and wings wrote
-  `emissiveIntensity` / `opacity` onto the shared `mats.cyan` and `mats.dark` instances,
-  which are also used by the perimeter rails, relay-core fins, core ring and orbital ring
-  edge. Every cyan surface in the arena pulsed in sync with the last drone in the loop.
-  Each drone now owns cloned armor/eye/wing/glow materials, disposed with it.
-- Fixed a double-dispose: a dissolved drone stayed in `bots`, so `spawnWave()` disposed
-  its geometry a second time. `disposeBot` is now idempotent.
-- Blending for the dissolve is configured once in `killBot()` instead of every frame.
-- **Extracted the arena into `dist/shared/arena.js`** — a renderer-free module exporting
-  `BOXES`, `buildSolids()`, `SPAWNS` and `KILL_FLOOR`. `game.js` now builds meshes from it
-  and derives `solids`/`shotMeshes` from the same specs. This is the prerequisite for an
-  authoritative server: it can collide and raycast against exactly what the client draws.
-  - Verified faithful by mechanically replaying the original imperative `box()` calls from
-    the committed `game.js` and diffing: **120 boxes, 49 solids, identical**.
-- Added `tests/arena.test.mjs`: finite/non-degenerate specs, collision bounds derived from
-  drawn boxes, all 8 spawns on solid ground and clear of geometry, a player dropped at each
-  spawn settles without drift, and the perimeter contains a sprinting player on all headings.
-- Removed the `supabase` entry from `.claude/settings.local.json` (agent tooling only; the
-  project never referenced Supabase). That file is git-ignored, so it never reached GitHub.
+| Module | Role |
+| --- | --- |
+| `dist/shared/arena.js` | Renderer-free arena geometry; client draws it, server collides against it |
+| `dist/shared/protocol.js` | Message types, validation, match rules, room codes, name sanitizing |
+| `dist/shared/raycast.js` | Ray/AABB hit resolution against the same solids `movePlayer` uses |
+| `server/room.js` | Authoritative deathmatch room: movement, shooting, damage, deaths, scores |
+| `server/hub.js` | Room registry, join/leave, rate limits, sweep, gated fixed-timestep driver |
+| `server.mjs` | Static client + same-origin WebSockets, `/healthz`, graceful shutdown |
+| `dist/net.js` | Transport, local prediction/reconciliation, remote interpolation |
+| `dist/online.js` | Remote avatars, nameplates, scoreboard, kill feed, match HUD |
+
+`movement.js` and `weapons.js` are imported unchanged by BOTH sides, so prediction and
+authority cannot drift apart.
+
+## Defects found and fixed this session
+
+- **Shared drone materials.** Glows and wings wrote onto the shared `mats.cyan`/`mats.dark`,
+  repainting every rail, fin and ring in the arena. Each drone now owns cloned materials.
+- **Double dispose.** A dissolved drone stayed in `bots`, so `spawnWave()` disposed its
+  geometry again. `disposeBot` is idempotent.
+- **Infinite loop in room code allocation.** `do {...} while (rooms.has(code))` spun forever
+  with a degenerate RNG, hanging the whole process synchronously. Now bounded, with a
+  deterministic fallback walk.
+- **Double-encoded snapshots.** `Hub.broadcast` sent an already-serialized frame into a
+  `send()` that serialized again. A browser would have connected, shown "Connected", and
+  then seen nothing ever move. Found by the WebSocket integration test.
+- **Stale input ran forever.** A silent client's last input was repeated indefinitely, so a
+  disconnected player kept running and firing. Now repeated for a 0.5s grace window, then
+  neutralized — the player stays in the world and stays killable.
+
+## Verified
+
+- 59 automated tests, all passing.
+- Live two-client session against the real `server.mjs`: room codes, both players visible,
+  movement replicated, damage traded, **20 snapshots/sec measured**, match clock, authoritative
+  reload (ammo unchanged mid-reload, restored on completion), `/healthz`, clean shutdown.
+- Full module graph serves over HTTP (all 200s).
+
+## NOT verified
+
+- **Nothing has been looked at in a browser.** No rendering, no mouse feel, no frame rate,
+  no visual check of remote avatars, nameplates, the scoreboard or the drone material fix.
+  Two browser windows have not been opened against each other.
+- No latency/jitter/packet-loss testing.
+- No deployment exists.
 
 ## Next task
 
-Build the authoritative server (Milestone 2), in this order:
-
-1. `dist/shared/protocol.js` — message types, size/shape validation, sequence rules.
-2. `server/room.js` — room state, capacity 2–8, join/leave, code generation, isolation.
-3. `server/sim.js` — fixed 60 Hz tick reusing `movement.js` + `weapons.js` + `arena.js`
-   unchanged. **Gate the tick loop on rooms having players** so an idle server burns no CPU
-   (this materially affects hosting cost on per-second-metered hosts).
-4. Add `ws`, commit `package-lock.json`, extend `server.mjs` to serve same-origin WebSockets.
-5. Client: prediction, reconciliation against acknowledged input sequences, remote
-   interpolation. Keep solo practice working throughout.
-
-Server tests to write alongside: room isolation/capacity, fire/reload timing under authority,
-collision/hit agreement, shield regeneration, kill deduplication, respawn, timer/reset,
-malformed input, disconnect cleanup.
-
-## Remaining limitations
-
-- `server.mjs` is still only a static file server; no rooms, no online matches.
-- Browser performance, visual quality and pointer feel still need manual verification.
-  The arena extraction was verified by spec diff and by HTTP module-graph load (all modules
-  return 200), **not** by looking at the rendered scene.
-- No deployment exists. Hosting is researched but nothing is provisioned.
+1. Open two browser windows on `http://localhost:3000`, create a match in one, join by code
+   in the other, and confirm remote players render and animate correctly.
+2. Then: Milestone 3 art pass, and deploy to Railway (~$5/month Hobby; the tick loop is
+   already gated on having players so an idle server costs almost nothing).
