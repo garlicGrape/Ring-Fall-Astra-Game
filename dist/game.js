@@ -1,7 +1,8 @@
 import * as T from './vendor/three.module.js';
-import { FPSControls } from './controls.js?v=3';
+import { FPSControls } from './controls.js?v=4';
 import { movePlayer } from './movement.js';
 import { WeaponSystem, reloadPose, segmentSphere } from './weapons.js';
+import { OnlineSession } from './online.js';
 import { BOXES, buildSolids, SPAWNS, KILL_FLOOR } from './shared/arena.js';
 
 const $=id=>document.getElementById(id);
@@ -49,6 +50,8 @@ const arsenal=new WeaponSystem();
 let recoil=0,flashTime=0,lastReloadPhase=-1;
 const player={pos:new T.Vector3(0,1.7,25),vy:0,ground:true,hp:100,shield:100,hurtAt:-10};
 let playing=false,started=false,dead=false,time=0,kills=0,wave=1,nextWave=0,hitTime=0,noticeTime=0,damageTime=0;
+// 'practice' is the original solo drone simulation; 'online' is the authoritative match.
+let mode='practice',menuOpen=false;
 let audio;let walking=false;let hudClock=0;
 const bots=[],projectiles=[],effects=[];const ray=new T.Raycaster();
 function tone(freq,duration=.08,type='square',vol=.1){if(!audio||audio.state!=='running')return;const o=audio.createOscillator(),g=audio.createGain();o.type=type;o.frequency.setValueAtTime(freq,audio.currentTime);o.frequency.exponentialRampToValueAtTime(Math.max(30,freq*.25),audio.currentTime+duration);g.gain.setValueAtTime(vol*Number($('volume').value),audio.currentTime);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+duration);o.connect(g);g.connect(audio.destination);o.start();o.stop(audio.currentTime+duration);}
@@ -61,23 +64,92 @@ function clearEffects(){for(const e of effects){scene.remove(e.mesh);e.mesh.geom
 function clearProjectiles(){for(const p of projectiles){scene.remove(p.mesh);p.mesh.geometry.dispose();p.mesh.material.dispose();}projectiles.length=0;}
 function spawnWave(){clearProjectiles();for(const b of bots)disposeBot(b);bots.length=0;for(let i=0;i<Math.min(3+wave,8);i++)makeBot(i);notify('WAVE '+String(wave).padStart(2,'0')+' / CLEAR THE DRONES',3);}
 function reset(){for(const p of projectiles){scene.remove(p.mesh);p.mesh.geometry.dispose();p.mesh.material.dispose();}projectiles.length=0;player.pos.set(0,1.7,25);player.vy=0;player.hp=100;player.shield=100;player.hurtAt=-10;player.ground=true;controls.yaw=0;controls.pitch=0;kills=0;wave=1;time=0;nextWave=0;dead=false;arsenal.reset();syncWeapon();recoil=0;flashTime=0;hitTime=0;damageTime=0;noticeTime=0;lastReloadPhase=-1;camera.fov=76;camera.updateProjectionMatrix();gun.position.set(0,0,0);gun.rotation.set(0,0,0);clearEffects();spawnWave();}
-function showPause(){playing=false;accumulator=0;document.body.classList.remove('playing');$('menu').classList.remove('hidden');$('hud').classList.add('hidden');if(started&&!dead){$('play').innerHTML='RESUME SIMULATION <span>↗</span>';$('status').textContent='Paused · Click Resume to capture your mouse. Escape releases it.';}}
+function showPause(){
+ if(mode==='online'&&online?.connected){menuOpen=true;document.body.classList.remove('playing');$('menu').classList.remove('hidden');$('play').innerHTML='RESUME <span>&#8599;</span>';$('status').textContent='Menu open. The match is still running and you can still be hit.';return;}
+ playing=false;accumulator=0;document.body.classList.remove('playing');$('menu').classList.remove('hidden');$('hud').classList.add('hidden');if(started&&!dead){$('play').innerHTML='RESUME SIMULATION <span>↗</span>';$('status').textContent='Paused · Click Resume to capture your mouse. Escape releases it.';}}
 function pause(){controls.pause();if(playing)showPause();}
-function begin(){if(!started||dead){reset();started=true;}playing=true;accumulator=0;last=performance.now();camera.position.copy(player.pos);camera.rotation.set(controls.pitch,controls.yaw,0,'YXZ');previousPos.copy(player.pos);document.body.classList.add('playing');$('menu').classList.add('hidden');$('hud').classList.remove('hidden');hud();}
+function begin(){
+ if(mode==='online'){menuOpen=false;playing=true;last=performance.now();document.body.classList.add('playing');$('menu').classList.add('hidden');$('hud').classList.remove('hidden');hud();return;}
+ if(!started||dead){reset();started=true;}playing=true;accumulator=0;last=performance.now();camera.position.copy(player.pos);camera.rotation.set(controls.pitch,controls.yaw,0,'YXZ');previousPos.copy(player.pos);document.body.classList.add('playing');$('menu').classList.add('hidden');$('hud').classList.remove('hidden');hud();}
 const controls=new FPSControls(canvas,{onStart:begin,onPause:showPause,onError:()=>{
   $('status').textContent='Mouse capture was blocked. Open the game in its own tab, then click Deploy again.';
   $('openTab').classList.remove('hidden');
 },onAction:code=>{if(code==='Digit1')switchWeapon(0);if(code==='Digit2')switchWeapon(1);if(code==='KeyR')reload();}});
+const online=new OnlineSession({T,scene,solids,player,controls,notify,tone});
 controls.sensitivity=Number($('sensitivity').value);
 $('sensitivity').oninput=()=>{controls.sensitivity=Number($('sensitivity').value);$('sensitivityValue').textContent=controls.sensitivity.toFixed(1);};
 function play(){
   controls.request();
   try{audio??=new (window.AudioContext||window.webkitAudioContext)();audio.resume().catch(()=>{});}catch{}
 }
-$('play').onclick=play;$('menuButton').onclick=()=>playing?pause():play();
+// --- Mode selection -------------------------------------------------------
+// Pointer lock is requested synchronously inside the click, BEFORE any socket or
+// audio work, because browsers only grant it from a live user gesture.
+
+function clearPractice(){for(const b of bots)disposeBot(b);bots.length=0;clearProjectiles();clearEffects();dead=false;}
+
+function startPractice(){
+ if(mode==='online'){online.stop();mode='practice';started=false;}
+ mode='practice';play();
+}
+
+function startOnline(code){
+ const name=($('playerName')?.value||'').trim();
+ if(!name){$('status').textContent='Enter a display name first.';$('playerName')?.focus();return;}
+ try{localStorage.setItem('ringfall.name',name);}catch{}
+ mode='online';
+ controls.request();
+ try{audio??=new (window.AudioContext||window.webkitAudioContext)();audio.resume().catch(()=>{});}catch{}
+ clearPractice();
+ arsenal.reset();syncWeapon();
+ kills=0;wave=1;
+ if(!online.active)online.start(name,code);
+}
+
+function leaveOnline(message){
+ online.stop();
+ mode='practice';playing=false;started=false;menuOpen=false;
+ document.body.classList.remove('playing');
+ $('menu').classList.remove('hidden');$('hud').classList.add('hidden');
+ $('play').innerHTML='DEPLOY TO ARENA <span>&#8599;</span>';
+ if(message)$('status').textContent=message;
+ controls.pause();
+}
+
+online.onStatus=(status,info)=>{
+ const badge=$('netStatus');
+ if(badge)badge.textContent={connecting:'Connecting…',joining:'Joining…',playing:'Connected',closed:'Disconnected',error:'Error'}[status]||status;
+ if(badge)badge.dataset.state=status;
+ if(status==='error'){leaveOnline(info?.message||'Connection failed.');}
+ if(status==='closed'&&mode==='online'){leaveOnline('Disconnected from the server. The match ended or the connection dropped.');}
+};
+
+$('play').onclick=()=>{if(mode==='online'&&online.connected)play();else startPractice();};
+$('menuButton').onclick=()=>playing&&!menuOpen?pause():play();
+$('createMatch')&&($('createMatch').onclick=()=>startOnline(''));
+$('joinMatch')&&($('joinMatch').onclick=()=>{
+ const code=($('joinCode')?.value||'').trim().toUpperCase();
+ if(code.length!==4){$('status').textContent='Room codes are four characters.';return;}
+ startOnline(code);
+});
+$('leaveMatch')&&($('leaveMatch').onclick=()=>leaveOnline('Left the match.'));
+$('copyInvite')&&($('copyInvite').onclick=async()=>{
+ const link=$('inviteLink')?.value;if(!link)return;
+ try{await navigator.clipboard.writeText(link);$('copyInvite').textContent='COPIED';}
+ catch{$('inviteLink')?.select();$('copyInvite').textContent='PRESS CTRL+C';}
+ setTimeout(()=>{$('copyInvite').textContent='COPY INVITE';},1600);
+});
+
+// An invite link carries the room code in the hash: .../#ABCD
+try{
+ const saved=localStorage.getItem('ringfall.name');
+ if(saved&&$('playerName'))$('playerName').value=saved;
+}catch{}
+const hashCode=location.hash.replace('#','').trim().toUpperCase();
+if(hashCode.length===4&&$('joinCode')){$('joinCode').value=hashCode;$('status').textContent='Invite detected. Enter a name, then Join.';}
 function syncWeapon(){const shotgun=arsenal.active===1;barrel2.visible=shotgun;receiver.visible=shotgun;gunStripe.material=shotgun?mats.orange:mats.cyan;magazine.scale.set(shotgun?1.3:1,shotgun?.7:1,1);}
-function switchWeapon(n){if(!arsenal.switchTo(n))return;syncWeapon();recoil=0;flashTime=0;lastReloadPhase=-1;controls.aiming=false;tone(300,.06,'sine',.08);hud();}
-function reload(){if(arsenal.reload()){controls.aiming=false;lastReloadPhase=-1;flashTime=0;hud();}}
+function switchWeapon(n){if(mode==='online')online.net?.weapon(n);if(!arsenal.switchTo(n))return;syncWeapon();recoil=0;flashTime=0;lastReloadPhase=-1;controls.aiming=false;tone(300,.06,'sine',.08);hud();}
+function reload(){if(mode==='online')online.net?.reload();if(arsenal.reload()){controls.aiming=false;lastReloadPhase=-1;flashTime=0;hud();}}
 function blocked(x,z,feet){return solids.some(b=>feet<b.maxY-.12&&feet+1.65>b.minY+.1&&x+.38>b.minX&&x-.38<b.maxX&&z+.38>b.minZ&&z-.38<b.maxZ);}
 function move(dt){walking=movePlayer(player,controls.keys,controls.yaw,dt,solids);if(player.pos.y<KILL_FLOOR)hurt(1000);camera.position.copy(player.pos);camera.rotation.set(controls.pitch,controls.yaw,0,'YXZ');camera.updateMatrixWorld(true);}
 function line(a,b,color,ttl=.075){const geo=new T.BufferGeometry().setFromPoints([a,b]);const mat=new T.LineBasicMaterial({color,transparent:true,opacity:.8});const mesh=new T.Line(geo,mat);scene.add(mesh);effects.push({mesh,ttl,max:ttl});}
@@ -102,7 +174,8 @@ function updateBots(dt){for(const b of bots){const p=b.group.position;if(!b.aliv
 
  if(bots.every(b=>!b.alive)&&nextWave===0){clearProjectiles();nextWave=4;notify('SECTOR CLEAR / NEXT WAVE INCOMING',3.8);player.shield=100;player.hp=Math.min(100,player.hp+30);}if(nextWave>0){nextWave-=dt;if(nextWave<=0){nextWave=0;wave++;spawnWave();}}
 }
-function hud(){const w=arsenal.definition,ammo=arsenal.ammo[arsenal.active];$('ammo').textContent=String(ammo).padStart(2,'0');$('weaponName').textContent=w.name;$('shieldBar').style.width=player.shield+'%';$('health').textContent=Math.ceil(player.hp);$('kills').textContent=String(kills).padStart(2,'0');$('wave').textContent='WAVE '+String(wave).padStart(2,'0');
+function hud(){const w=arsenal.definition;let ammo=arsenal.ammo[arsenal.active],hp=player.hp,shield=player.shield;
+ if(mode==='online'&&online.me){const m=online.me;ammo=m.am;hp=m.hp;shield=m.sh;}$('ammo').textContent=String(ammo).padStart(2,'0');$('weaponName').textContent=w.name;$('shieldBar').style.width=shield+'%';$('health').textContent=Math.ceil(hp);$('kills').textContent=String(kills).padStart(2,'0');$('wave').textContent='WAVE '+String(wave).padStart(2,'0');
  $('reloadHint').textContent=arsenal.reloading?'RELOADING '+Math.round(arsenal.progress*100)+'%':arsenal.busy?'EQUIPPING…':ammo===w.cap?'MAGAZINE FULL':'R  RELOAD';
  $('reloadTrack').hidden=!arsenal.reloading;$('reloadProgress').style.width=(arsenal.progress*100)+'%';
  $('slot1').classList.toggle('selected',arsenal.active===0);$('slot2').classList.toggle('selected',arsenal.active===1);$('hit').style.opacity=hitTime>0?'1':'0';$('damage').style.opacity=Math.max(0,damageTime*1.7);
@@ -124,10 +197,22 @@ function simulate(dt){
 function loop(now){
  requestAnimationFrame(loop);const dt=Math.min((now-last)/1000,.1);last=now;
  if(playing){
-  accumulator+=dt;
-  while(accumulator>=STEP_TIME&&playing){simulate(STEP_TIME);accumulator-=STEP_TIME;}
-  accumulator=Math.max(0,accumulator);
-  camera.position.lerpVectors(previousPos,player.pos,accumulator/STEP_TIME);
+  if(mode==='online'){
+   time+=dt;recoil=Math.max(0,recoil-dt*8);flashTime-=dt;hitTime-=dt;noticeTime-=dt;damageTime=Math.max(0,damageTime-dt);
+   if(noticeTime<=0)$('notice').textContent='';
+   arsenal.tick(dt);
+   online.update(dt);
+   if(controls.firing&&controls.locked&&online.me?.a!==0)fire();
+   online.render(dt);
+   for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.ttl-=dt;e.mesh.material.opacity=Math.max(0,e.ttl/e.max);if(e.ttl<=0){scene.remove(e.mesh);e.mesh.geometry.dispose();e.mesh.material.dispose();effects.splice(i,1);}}
+   walking=controls.keys.has('KeyW')||controls.keys.has('KeyA')||controls.keys.has('KeyS')||controls.keys.has('KeyD');
+   camera.position.copy(player.pos);
+  }else{
+   accumulator+=dt;
+   while(accumulator>=STEP_TIME&&playing){simulate(STEP_TIME);accumulator-=STEP_TIME;}
+   accumulator=Math.max(0,accumulator);
+   camera.position.lerpVectors(previousPos,player.pos,accumulator/STEP_TIME);
+  }
   camera.rotation.set(controls.pitch,controls.yaw,0,'YXZ');
   const aiming=controls.aiming&&!arsenal.busy;const targetFov=aiming?58:76;camera.fov=T.MathUtils.lerp(camera.fov,targetFov,1-Math.exp(-16*dt));camera.updateProjectionMatrix();
   const bob=walking&&player.ground?Math.sin(time*10)*.004:0;
@@ -145,7 +230,7 @@ function loop(now){
   pump.position.z=-.62+(arsenal.active===1?recoil*.085:pose.latch*.025);
   supportHand.position.set(.25+pose.magazine*.065,-.36-pose.magazine*.12,-.63+pose.tilt*.18);
   hudClock+=dt;if(hudClock>.04){hud();hudClock=0;}
- }else if(!started){const t=now*.000025;camera.position.set(14+Math.sin(t)*2,8.5,28);camera.lookAt(-3,4,-5);}
+ }else if(!started&&mode!=='online'){const t=now*.000025;camera.position.set(14+Math.sin(t)*2,8.5,28);camera.lookAt(-3,4,-5);}
  coreRing.rotation.z=now*.00015;renderer.autoClear=true;renderer.render(scene,camera);
  if(playing){flash.visible=flashTime>0;renderer.autoClear=false;renderer.clearDepth();renderer.render(viewScene,viewCamera);}
 }

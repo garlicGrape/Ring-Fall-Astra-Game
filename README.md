@@ -10,15 +10,27 @@ All project dependencies, caches, logs and generated outputs should stay inside 
 
 At session end: stop project processes, test, update PROGRESS.md, commit, push and verify the remote branch. Only then, after preserving ignored files you need, may you move the checkout to Trash. The agent must never delete the checkout automatically. If a push fails, keep the folder. **LOCAL_WORKFLOW.md has the exact checks and safeguards.**
 
-## Run the current game
+## Run the game
 
-Install Node.js 22 or newer, open a terminal in this extracted `ringfall` folder, and run:
+Install Node.js 22 or newer, open a terminal in this folder, and run:
 
 ```sh
+npm ci        # installs ws, the only dependency
 npm run dev
 ```
 
-Open http://localhost:3000 in a desktop browser. No dependency installation or API key is needed for this baseline. Do not open `dist/index.html` as a file URL. `npm start` runs the same static server.
+Open http://localhost:3000 in a desktop browser. Do not open `dist/index.html` as a file URL — the client is ES modules and needs the server. `npm start` runs the same server.
+
+### Playing online
+
+`server.mjs` serves the client AND runs the authoritative game server on the same origin and port.
+
+1. Enter a callsign in the multiplayer panel.
+2. **Create Match** makes a room and shows a four-character code plus an invite link.
+3. Friends open the invite link (or enter the code and press **Join**).
+4. Free-for-all: first to 15 eliminations or eight minutes. 2–8 players per room.
+
+Rooms are in-memory. Restarting the server ends any match in progress. **Deploy** still runs the original solo drone practice with no connection needed.
 
 Checks:
 
